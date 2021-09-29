@@ -1,3 +1,6 @@
+# temp database folder
+/tmp
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
