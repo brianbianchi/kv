@@ -4,20 +4,16 @@
 
 ## Usage
 
----
-
 ```console
 $ go run main.go -dbpath / -port :4000
 ```
 
-|   Flag    |   default   |    Description     |
-| :-------: | :---------: | :----------------: |
-| `-dbpath` | "/tmp/data" |  Path to leveldb.  |
-|  `-port`  |   ":3000"   | Port to serve API. |
+|   Flag    | Default value |    Description     |
+| :-------: | :-----------: | :----------------: |
+| `-dbpath` |  "/tmp/data"  |  Path to leveldb.  |
+|  `-port`  |    ":3000"    | Port to serve API. |
 
 ## API
-
----
 
 |   Endpoint    |              Description              |
 | :-----------: | :-----------------------------------: |
