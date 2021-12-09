@@ -5,7 +5,7 @@
 ## Usage
 
 ```console
-$ go run main.go -dbpath / -port :4000
+$ go run *.go -dbpath / -port :4000
 ```
 
 |   Flag    | Default value |    Description     |
@@ -19,7 +19,7 @@ $ go run main.go -dbpath / -port :4000
 | :-----------: | :-----------------------------------: |
 |  GET `/key`   |  Returns value of the specified key.  |
 |  PUT `/key`   | Creates or replaces a key-value pair. |
-| DELETE `/key` |        Deletes the given key.         |
+| DELETE `/key` |   Deletes the given key-value pair.   |
 
 ### Todo
 
