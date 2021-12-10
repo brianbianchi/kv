@@ -1,22 +1,18 @@
-#!/usr/bin/env bash
+#!/bin/bash
+set -e
 
-package_name="kv"
-platforms=("windows/amd64" "linux/amd64" "linux/arm64" "linux/386" "darwin/amd64")
+trap 'killall kv' SIGINT
 
-# remove any old binaries
-rm "$package_name"-*
+cd $(dirname $0)
 
-for platform in "${platforms[@]}"; do
-    platform_split=(${platform//\// })
-    GOOS=${platform_split[0]}
-    GOARCH=${platform_split[1]}
-    printf "%s " "Building for $GOOS-$GOARCH"
-    if export GOOS="$GOOS" GOARCH="$GOARCH"; then
-        output_name="$package_name-$GOOS-$GOARCH$(go env GOEXE)"
-        go build -o "$output_name"
-        echo -e "✅"
-    else
-        echo -e "An error has occurred! Aborting ..."
-        exit 1
-    fi
-done
+killall kv || true
+sleep 0.1
+
+go install -v
+go build
+
+./kv -dbpath=./tmp/nyc.db -addr=127.0.0.1:8080 -config=sharding.toml -shard=nyc &
+./kv -dbpath=./tmp/denver.db -addr=127.0.0.1:8081 -config=sharding.toml -shard=denver &
+./kv -dbpath=./tmp/sd.db -addr=127.0.0.1:8082 -config=sharding.toml -shard=sd &
+
+wait
