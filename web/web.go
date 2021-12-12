@@ -2,48 +2,56 @@ package web
 
 import (
 	"fmt"
-	"hash/fnv"
 	"io"
 	"io/ioutil"
+	"kv/config"
 	"kv/db"
 	"net/http"
 	"strings"
 )
 
 type Server struct {
-	db         *db.Database
-	shardIdx   int
-	shardCount int
-	addrs      map[int]string
+	db     *db.Database
+	shards *config.Shards
 }
 
-func NewServer(db *db.Database, shardIdx, shardCount int, addrs map[int]string) *Server {
+func NewServer(db *db.Database, s *config.Shards) *Server {
 	return &Server{
-		db:         db,
-		shardIdx:   shardIdx,
-		shardCount: shardCount,
-		addrs:      addrs,
+		db:     db,
+		shards: s,
 	}
 }
 
-func (s *Server) getShard(key string) int {
-	h := fnv.New64()
-	h.Write([]byte(key))
-	return int(h.Sum64() % uint64(s.shardCount))
-}
-
 func (s *Server) redirect(shard int, w http.ResponseWriter, r *http.Request) {
-	url := fmt.Sprintf("http://%s%s", s.addrs[shard], r.RequestURI)
-	fmt.Printf("redirecting from shard %d to shard %d (%q)\n", s.shardIdx, shard, url)
+	url := "http://" + s.shards.Addrs[shard] + r.RequestURI
+	fmt.Printf("redirecting from shard %d to shard %d (%q)\n", s.shards.CurIdx, shard, url)
 
-	resp, err := http.Get(url)
+	client := &http.Client{}
+	var req *http.Request
+	var resp *http.Response
+	var err error = nil
+	switch r.Method {
+	case "GET":
+		req, err = http.NewRequest(http.MethodGet, url, nil)
+	case "PUT":
+		req, err = http.NewRequest(http.MethodPut, url, r.Body)
+	case "DELETE":
+		req, err = http.NewRequest(http.MethodDelete, url, nil)
+	}
 	if err != nil {
 		w.WriteHeader(500)
-		fmt.Fprintf(w, "Error redirecting the request: %v", err)
+		fmt.Printf("Error redirecting the request: %v", err)
+		return
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Printf("Error redirecting the request: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
+	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
 }
 
@@ -59,38 +67,37 @@ func (s *Server) RouteHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		shard := s.getShard(string(key))
-		data, err := s.db.GetKey(key)
-
-		if shard != s.shardIdx {
+		shard := s.shards.Index(string(key))
+		if shard != s.shards.CurIdx {
 			s.redirect(shard, w, r)
 			return
 		}
 
-		fmt.Printf("Shard = %d, current shard = %d, addr = %q, Value = %q, error = %v\n", shard, s.shardIdx, s.addrs[shard], data, err)
+		data, err := s.db.GetKey(key)
+
+		fmt.Printf("Shard = %d, current shard = %d, addr = %q, Value = %q, error = %v\n", shard, s.shards.CurIdx, s.shards.Addrs[shard], data, err)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(404)
 			return
 		}
-		w.WriteHeader(201)
 		w.Write(data)
 	case "PUT":
+		shard := s.shards.Index(string(key))
+		if shard != s.shards.CurIdx {
+			s.redirect(shard, w, r)
+			return
+		}
+
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(404)
 			return
 		}
-		value := []byte(body)
 
-		shard := s.getShard(string(key))
-		if shard != s.shardIdx {
-			s.redirect(shard, w, r)
-			return
-		}
-		err = s.db.PutKey(key, value)
-		fmt.Printf("Error = %v, shardIdx = %d, current shard = %d\n", err, shard, s.shardIdx)
+		err = s.db.PutKey(key, []byte(body))
+		fmt.Printf("Shard = %d, current shard = %d, addr = %q, Value = %q, error = %v\n", shard, s.shards.CurIdx, s.shards.Addrs[shard], []byte(body), err)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(404)
@@ -98,7 +105,14 @@ func (s *Server) RouteHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(201)
 	case "DELETE":
+		shard := s.shards.Index(string(key))
+		if shard != s.shards.CurIdx {
+			s.redirect(shard, w, r)
+			return
+		}
 		err := s.db.DeleteKey(key)
+		fmt.Printf("Shard = %d, current shard = %d, addr = %q, error = %v\n", shard, s.shards.CurIdx, s.shards.Addrs[shard], err)
+
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(404)
